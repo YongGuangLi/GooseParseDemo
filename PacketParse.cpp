@@ -29,6 +29,8 @@ PacketParse::~PacketParse() {
 
 void PacketParse::dissectPacket(string pcapfile, struct pcap_pkthdr *pkthdr, u_char *packet)
 {
+	pcapFile = pcapfile;
+
 	stGooseContent gooseContent;
 	memset(&gooseContent, 0, sizeof(stGooseContent));
 
@@ -535,6 +537,13 @@ void PacketParse::analysisGooseContent(stGooseContent self)
 	SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_DEBUG, string("dataset:") + self.dataset +
 							" size:" + boost::lexical_cast<string>(vecFcd.size()) +
 							" numberOfDatSetEntries:" + boost::lexical_cast<string>(self.numberOfDatSetEntries));
+
+	if(vecFcd.size() != self.numberOfDatSetEntries)
+	{
+		SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_ERROR, " Size not equal to numberOfDatSetEntries");
+		return;
+	}
+
 	int elementIndex = 0;
 	int maxElementIndex = MmsValue_getArraySize(self.dataSetValues);
 	while(elementIndex < maxElementIndex)
@@ -542,12 +551,13 @@ void PacketParse::analysisGooseContent(stGooseContent self)
 		string fcd = vecFcd.at(elementIndex);
 		vector<string> vecFcda = dataSetModel.getFcdaByFcd(fcd);                               //通过FCD获取FCD中的每个数据引用
 		string fcda = vecFcda.at(0);
+
 		string redisAddr = SingletonConfig->getPubAddrByFcda(fcda);
-		MmsValue* value = MmsValue_getElement(self.dataSetValues, elementIndex);
-		char strMmsvalue[64] = {0};
-		SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_DEBUG, string(MmsValue_getTypeString(value)) + " " +
-								fcda + " " + redisAddr + " " +
-							   MmsValue_printToBuffer(value, strMmsvalue, 64));
+
+		MmsValue* valueMmsValue = MmsValue_getElement(self.dataSetValues, elementIndex);
+
+		publishPointValue(self, fcda, redisAddr, valueMmsValue, "");
+
 		elementIndex++;
 	}
 
@@ -555,47 +565,60 @@ void PacketParse::analysisGooseContent(stGooseContent self)
 	MmsValue_deleteIfNotNull(self.dataSetValues);
 }
 
-int PacketParse::publishPointValue(stGooseContent self, string fcda, string redisAddr, MmsValue*  fcdaMmsValue, char* utcTime)
+PointValueType PacketParse::getPointValueType(MmsValue*  mmsValue)
 {
-//	MmsType fcdaType = MmsValue_getType(fcdaMmsValue);
-//	switch(fcdaType)
-//	{
-//	case MMS_ARRAY:
-//	case MMS_STRUCTURE:
-//		fcdaMmsValue = MmsValue_getElement(fcdaMmsValue,0);
-//		break;
-//	default:
-//		break;
-//	}
-//
-//	char strFcdaMmsValue[64] = {0};
-//	MmsValue_printToBuffer(fcdaMmsValue, strFcdaMmsValue, 64);
-//
-//	SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_INFO, fcda + " type:" + MmsValue_getTypeString(fcdaMmsValue) +
-//																		string("  value:") + strFcdaMmsValue +
-//																		" utcTime:" + utcTime);
-//
-//	PointValueType ctype = getPointValueType(fcdaMmsValue);
-//
-//	RtdbMessage rtdbMessage;
-//	rtdbMessage.set_messagetype(TYPE_REALPOINT);
-//
-//	RealPointValue* realPointValue = rtdbMessage.mutable_realpointvalue();
-//	realPointValue->set_channelname(SingletonConfig->getChannelName());
-//	realPointValue->set_pointvalue(strFcdaMmsValue);
-//	realPointValue->set_pointaddr(redisAddr);
-//	realPointValue->set_valuetype(ctype);
-//	realPointValue->set_channeltype(2);                                       //通道类型，1-采集  2-网分
-//	realPointValue->set_timevalue(utcTime);                                        //实时点时标
-//	realPointValue->set_sourip(mmsContent.srcIp);
-//	realPointValue->set_destip(mmsContent.dstIp);
-//	realPointValue->set_protocoltype("IEC61850");
-//	//realPointValue->set_pcapfilename(mmsContent.pcapFile);
-//
-//	string dataBuf;
-//	rtdbMessage.SerializeToString(&dataBuf);
-//
-//	return redisHelper->publish(REDIS_CHANNEL_CONFIG, dataBuf, string("6014_") + SingletonConfig->getPubAddrByFcda(fcda) + "_2");
+	MmsType fcdaType = MmsValue_getType(mmsValue);
+
+	PointValueType ctype = VTYPE_RESERVE;
+	switch(fcdaType)
+	{
+	case MMS_BOOLEAN:
+		ctype = VTYPE_BOOL;
+		break;
+	case MMS_INTEGER:
+	case MMS_UNSIGNED:
+		ctype = VTYPE_INT32;
+		break;
+	case MMS_FLOAT:
+		ctype = VTYPE_FLOAT;
+		break;
+	case MMS_OCTET_STRING:
+	case MMS_VISIBLE_STRING:
+	case MMS_STRING:
+	case MMS_UTC_TIME:
+		ctype = VTYPE_STRING;
+		break;
+	}
+	return ctype;
+}
+
+int PacketParse::publishPointValue(stGooseContent self, string fcda, string redisAddr, MmsValue*  valueMmsValue, char* utcTime)
+{
+
+	char strMmsValue[64] = {0};
+	MmsValue_printToBuffer(valueMmsValue, strMmsValue, 64);
+
+	SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_INFO, fcda + " type:" + MmsValue_getTypeString(valueMmsValue) + string("  value:") + strMmsValue + " redisAddr:" + redisAddr);
+
+	PointValueType ctype = getPointValueType(valueMmsValue);
+
+	RtdbMessage rtdbMessage;
+	rtdbMessage.set_messagetype(TYPE_REALPOINT);
+
+	RealPointValue* realPointValue = rtdbMessage.mutable_realpointvalue();
+	realPointValue->set_channelname(SingletonConfig->getChannelName());
+	realPointValue->set_pointvalue(strMmsValue);
+	realPointValue->set_pointaddr(redisAddr);
+	realPointValue->set_valuetype(ctype);
+	realPointValue->set_channeltype(2);                                       //通道类型，1-采集  2-网分
+	realPointValue->set_timevalue(utcTime);                                   //实时点时标
+	realPointValue->set_protocoltype("IEC61850");
+	realPointValue->add_pcapfilename(pcapFile);
+
+	string dataBuf;
+	rtdbMessage.SerializeToString(&dataBuf);
+
+	return redisHelper->publish(REDIS_CHANNEL_ALARMCALC, dataBuf, string("6014_") + SingletonConfig->getPubAddrByFcda(fcda) + "_2");
 	return 0;
 }
 
@@ -621,7 +644,7 @@ void PacketParse::subscribe()
 			if(redisHelper->open())
 			{
 				SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_DEBUG, "Redis Connect Success:" + SingletonConfig->getRedisIp());
-				if(redisHelper->subscribe(SingletonConfig->getChannelName()) >= 1)
+				if(redisHelper->subscribe(SingletonConfig->getChannelName(), NULL) >= 1)
 				{
 					SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_DEBUG, "Redis Subscribe Success:" + SingletonConfig->getChannelName());
 				}
@@ -696,7 +719,7 @@ void PacketParse::sendHeartBeat()         //发送心跳
 		string message;
 		rtdbMessage.SerializeToString(&message);
 
-		heatRedisHelper->publish(REDIS_CHANNEL_CONFIG, message);
+		heatRedisHelper->publish(REDIS_CHANNEL_PROCTRL, message);
 		SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_DEBUG, "Write Heart Beat");
 	}
 }

@@ -73,7 +73,7 @@ int main(int argc,char **argv)
 				{
 					packetCnt++;
 					//printf("packetCnt = %d\n",packetCnt);
-					packetParse.dissectPacket(filePath.filename().string(), pkthdr, packet);     //分析报文内容
+					packetParse.dissectPacket(filePath.filename().string().c_str(), pkthdr, packet);     //分析报文内容
 				}
 				else if(result == -2)          //文件最后一个报文
 				{

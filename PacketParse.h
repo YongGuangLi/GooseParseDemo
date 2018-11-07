@@ -84,7 +84,9 @@ public:
 public:
 	void analysisGooseContent(stGooseContent self);
 
-	int publishPointValue(stGooseContent self, string fcda, string redisAddr, MmsValue*  fcdaMmsValue, char* utcTime);
+	PointValueType getPointValueType(MmsValue*  mmsValue);
+
+	int publishPointValue(stGooseContent self, string fcda, string redisAddr, MmsValue* valueMmsValue, char* utcTime);
 public:
 
 	void run();                                        //处理解析完成的报文内容
@@ -108,6 +110,8 @@ private:
 	bool isRunning;
 
 	DataSetModel dataSetModel;
+
+	string pcapFile;
 };
 
 #endif /* PACKETPARSE_H_ */
