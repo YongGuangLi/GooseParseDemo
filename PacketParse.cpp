@@ -533,12 +533,25 @@ exit_with_error:
 
 void PacketParse::analysisGooseContent(stGooseContent self)
 {
+	vector<string> datSetEntries;
+
 	vector<string> vecFcd = dataSetModel.getFcdByDataset(self.dataset);
+	for(int i = 0; i < vecFcd.size(); ++i)
+	{
+		string fcd = vecFcd.at(i);
+		vector<string> vecFcda = dataSetModel.getFcdaByFcd(fcd);                               //通过FCD获取FCD中的每个数据引用
+		for(int j = 0; j < vecFcda.size(); ++j)
+		{
+			string fcda = vecFcda.at(j);
+			datSetEntries.push_back(fcda);
+		}
+	}
+
 	SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_DEBUG, string("dataset:") + self.dataset +
-							" size:" + boost::lexical_cast<string>(vecFcd.size()) +
+							" size:" + boost::lexical_cast<string>(datSetEntries.size()) +
 							" numberOfDatSetEntries:" + boost::lexical_cast<string>(self.numberOfDatSetEntries));
 
-	if(vecFcd.size() != self.numberOfDatSetEntries)
+	if(datSetEntries.size() != self.numberOfDatSetEntries)
 	{
 		SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_ERROR, " Size not equal to numberOfDatSetEntries");
 		return;
@@ -548,11 +561,14 @@ void PacketParse::analysisGooseContent(stGooseContent self)
 	int maxElementIndex = MmsValue_getArraySize(self.dataSetValues);
 	while(elementIndex < maxElementIndex)
 	{
-		string fcd = vecFcd.at(elementIndex);
-		vector<string> vecFcda = dataSetModel.getFcdaByFcd(fcd);                               //通过FCD获取FCD中的每个数据引用
-		string fcda = vecFcda.at(0);
-
+		string fcda = datSetEntries.at(elementIndex);
 		string redisAddr = SingletonConfig->getPubAddrByFcda(fcda);
+		if(redisAddr.empty())
+		{
+			SingletonLog4cplus->log(Log4cplus::LOG_NORMAL, Log4cplus::LOG_INFO, fcda + " not redisaddr");
+			elementIndex++;
+			continue;
+		}
 
 		MmsValue* valueMmsValue = MmsValue_getElement(self.dataSetValues, elementIndex);
 
@@ -612,14 +628,14 @@ int PacketParse::publishPointValue(stGooseContent self, string fcda, string redi
 	realPointValue->set_valuetype(ctype);
 	realPointValue->set_channeltype(2);                                       //通道类型，1-采集  2-网分
 	realPointValue->set_timevalue(utcTime);                                   //实时点时标
-	realPointValue->set_protocoltype("IEC61850");
-	realPointValue->add_pcapfilename(pcapFile);
+	realPointValue->set_protocoltype("goose");
+	realPointValue->add_pcapfilename(SingletonConfig->getSrcPacpFilePath() + "/" + pcapFile);
+	realPointValue->add_pcapfilename(SingletonConfig->getDstPacpFilePath() + "/" + pcapFile);
 
 	string dataBuf;
 	rtdbMessage.SerializeToString(&dataBuf);
 
 	return redisHelper->publish(REDIS_CHANNEL_ALARMCALC, dataBuf, string("6014_") + SingletonConfig->getPubAddrByFcda(fcda) + "_2");
-	return 0;
 }
 
 void PacketParse::run()

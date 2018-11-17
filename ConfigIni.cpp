@@ -19,11 +19,6 @@ ConfigIni* ConfigIni::getInstance()
 	return configIni;
 }
 ConfigIni::ConfigIni() {
-	initConfig("/home/wgj/GooseParseDemo/GooseParse/config.ini");
-
-	initIedDescTxt("/home/wgj/GooseParseDemo/GooseParse/ieddesc.txt");
-
-	initPointDescTxt("/home/wgj/GooseParseDemo/GooseParse/pointdesc.txt");
 }
 
 ConfigIni::~ConfigIni() {
