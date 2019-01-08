@@ -1,1 +1,1 @@
-/home/wgj/MmsParseDemo/MmsParse/RtdbMessage.pb.cpp
+/home/opensource/libiec61850-0.9.2.1/MmsParseDemo/RtdbMessage.pb.cpp

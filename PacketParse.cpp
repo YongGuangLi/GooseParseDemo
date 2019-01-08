@@ -414,7 +414,7 @@ MmsValue* PacketParse::parseAllDataUnknownValue(stGooseContent* self, uint8_t* b
     if (isStructure)
         dataSetValues = MmsValue_createEmptyStructure(elementIndex);
     else
-        dataSetValues = MmsValue_createEmtpyArray(elementIndex);
+        dataSetValues = MmsValue_createEmptyArray(elementIndex);
 
     elementIndex = 0;
     bufPos = 0;
